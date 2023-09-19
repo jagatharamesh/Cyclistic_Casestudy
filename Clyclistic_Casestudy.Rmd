@@ -1,0 +1,252 @@
+---
+title: "Cyclistic_Casestudy"
+author: "Jagatha pugazhendhi"
+date: "2023-09-10"
+output:
+  html_document: default
+  word_document: default
+---
+
+
+
+## PURPOSE :
+
+This analysis is for case study 1 of the Google Data Analytics Certificate (Cyclistic).  It’s originally based on the case study 'Sophisticated, Clear, and Polished’: Divvy and Data Visualization" written by Kevin Hartman (found here: <https://artscience.blog/home/divvy-dataviz-case-study>). We will be using the Divvy data set for the case study.
+The purpose of this study is to answer key question "In what ways do members and casual riders use Divvy bikes differently?”.
+
+I have used quarterly data (may,June,July,august) in excel to see if there are seasonal behaviors  with the riders and then have consolidated them into a single data frame in R to do further analysis.
+
+### Initial collection and organizing data was done on excel sheets
+
+* 3 new columns ride_length , trip_start_day and trip_end_day was created.
+* mean_ride_length is  around 26.
+* max_ride_length is around 24 hours.
+* Maximum rents happen on Saturdays except June, where it happens on Friday.
+* 2 Pivot tables are created (*number of rides on days of a week* , *Average ride length on different days of a week* ).
+* From Pivot table 1, maximum rides happen on **weekends** (Saturday and Sunday) both for members and casual riders.
+* Casual riders count is mostly less than members on weekdays.
+* It is considerably higher on weekends compared to weekdays.
+* From Pivot table 2, average_ride_length is always higher for casual riders than members on all days of a week and
+the maximum average_ride_length is on **Sunday**.
+
+### Loading the required libraries
+```{r warning=FALSE, message = FALSE,results= FALSE}
+library(tidyverse)
+library(tibble)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+```
+
+### Collect and Organize the data 
+
+```{r, warning=FALSE, message = FALSE,results= FALSE}
+setwd("C:/Users/gkana/Desktop/CASE STUDY/updated_CSV")
+tripdata_may <- read_csv("may.csv",na=c(''))
+tripdata_june <- read_csv("june.csv",na=c(''))
+tripdata_july <- read_csv("july.csv",na=c(''))
+tripdata_august <- read_csv("august.csv",na=c(''))
+```
+
+### inspect the dataframes for incongruencies
+```{r, warning=FALSE, message = FALSE , results= FALSE}
+str(tripdata_may)
+str(tripdata_june)
+str(tripdata_july)
+str(tripdata_august)
+```
+
+In the ***tripdata_may data frame,ride_length = col_time(format = ""),in all other data frames they are read as characters.
+
+To make the value consistent across all data frames the following code is used.
+
+```{r, warning=FALSE, message = FALSE ,results= FALSE}
+tripdata_may <- mutate(tripdata_may, ride_length = as.character(ride_length))
+```
+
+### To compare column names of all the data frames
+```{r, warning=FALSE, message = FALSE , results= FALSE}
+colnames(tripdata_may)
+colnames(tripdata_june)
+colnames(tripdata_july)
+colnames(tripdata_august)
+```
+
+All the column names are same with same data type
+
+### Combining 4 data frames to single data frame for further analysis
+
+```{r, warning=FALSE, message = FALSE , results= FALSE}
+NewDF <- rbind(tripdata_may, tripdata_june, tripdata_july, tripdata_august)
+head(NewDF)
+colnames(NewDF)
+```
+```{r}
+options(dplyr.width = Inf)
+```
+
+
+### Remove unused columns to simplify the file
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+NewDF = subset(NewDF, select = -c(start_lat,start_lng,end_lat,end_lng,...17,...18,...19))
+print('Modified dataframe:-')
+head(NewDF)
+```
+
+
+### Clean Data
+Removing data where values are null, ride_length is 0 and started_at and ended_at values are same.
+
+```{r warning=FALSE, message = FALSE , results= FALSE}
+NewDF[is.na(NewDF$ride_length),]
+cleanDF <- NewDF[!is.na(NewDF$ride_length) & NewDF$started_at != NewDF$ended_at & NewDF$ride_length > 0,]
+head(cleanDF) 
+```
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+dim(cleanDF)[1] - sum(complete.cases(cleanDF))
+```
+```{r warning=FALSE, message = FALSE , results= TRUE}
+recleanedDF <- cleanDF[complete.cases(cleanDF), ]
+
+dim(recleanedDF)[1] - sum(complete.cases(recleanedDF))
+```
+```{r warning=FALSE, message = FALSE , results= TRUE}
+recleanedDF %>% 
+  as_tibble() %>% 
+  print(n=5)
+```
+### Creating a new field ride_duration_minutes from 'ride_length' to make further analysis simpler.
+```{r warning=FALSE, message = FALSE , results= FALSE}
+recleanedDF$ride_length <- hms(recleanedDF$ride_length )
+recleanedDF$ride_length <- as.numeric(recleanedDF$ride_length, "seconds")
+recleanedDF <- recleanedDF %>% 
+  mutate(ride_duration_minutes = ride_length / 60)
+
+```
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+colnames(recleanedDF)
+head(recleanedDF)
+```
+### Creating a new column start_day_name 
+
+```{r warning=FALSE, message = FALSE , results= FALSE}
+recleanedDF$start_day_name <- recode(recleanedDF$trip_start_day, 
+       "1"="Sunday",
+       "2"="Monday",
+       "3"="Tuesday",
+       "4"="Wednesday",
+       "5"="Thursday",
+       "6"="Friday",
+       "7"="Saturday")
+head(recleanedDF)
+```
+
+
+
+## [Preferred bikes by different riders]{.underline}
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+
+preferred_bike_df <- aggregate(ride_id  ~ rideable_type  + member_casual, data = recleanedDF, function(x) length(x))
+preferred_bike_df
+
+```
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+ggplot(preferred_bike_df,aes(x = member_casual, y =ride_id, fill = rideable_type)) +
+geom_bar(stat = "identity", position = "dodge")
+```
+## Both type of riders seem to prefer docked bikes rather than electric bikes.
+
+## [Number of rides on different days of a week by members and casual riders]{.underline}
+
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+rides_daysofaweek_df <- aggregate(ride_id ~ start_day_name + member_casual + trip_start_day, data = recleanedDF, function(x) length(x))
+rides_daysofaweek_df
+```
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+
+ggplot(rides_daysofaweek_df, aes(x = trip_start_day, y = ride_id, fill = member_casual)) +
+  geom_col(position = "dodge") + scale_x_continuous(breaks=seq(1,7,1)) + geom_text(aes(label=start_day_name), position=position_dodge(width=0.2), vjust=-0.5)
+```
+## We can clearly see from the graph that maximum number of rides by both casual riders and members happen on weekends(saturday and sunday).And casual riders take more rides than members on weekends.
+
+
+## [Average ride time of different riders]{.underline}
+
+```{r}
+mean_rideduration_df <- recleanedDF %>% 
+  group_by(member_casual,trip_start_day,start_day_name) %>% 
+  summarise(mean_ride_duration=mean(ride_duration_minutes),
+            .groups = 'drop') %>%
+  as.data.frame()
+mean_rideduration_df
+```
+
+
+```{r  warning=FALSE, message = FALSE , results= TRUE}
+ggplot(mean_rideduration_df, aes(x = trip_start_day, y = mean_ride_duration, fill = member_casual)) +
+  geom_col(position = "dodge")  + scale_x_continuous(breaks=seq(1,7,1)) + geom_text(aes(label=start_day_name), position=position_dodge(width=0.9), vjust=-0.25)
+```
+## We can see average_ride_length of casual riders are always higher than members.
+
+
+## [Riders who return the bikes next day]{.underline}
+
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+longer_rents_df <- recleanedDF %>% 
+  group_by(member_casual,trip_start_day,start_day_name ) %>% 
+  summarize(sum_rides=length(which(trip_end_day > trip_start_day)))
+longer_rents_df
+
+```
+
+
+
+```{r warning=FALSE, message = FALSE , results= TRUE}
+ggplot(longer_rents_df, aes(member_casual, sum_rides)) +
+  geom_point(aes(shape = member_casual, color = member_casual), size = 3) +
+  scale_shape_manual(values = c(16, 17)) +
+  scale_color_manual(values = c("#E7B800", "#FC4E07"))+
+  theme_minimal() +
+  theme(legend.position = "top") +
+  geom_text(
+    label=longer_rents_df$start_day_name,
+    nudge_x=0.45, nudge_y=0.1,
+    check_overlap=T
+)
+
+```
+
+
+
+
+### It is mostly casual riders who rent it for more than a day and the maximum number of casual riders do it on Friday.
+
+
+
+## [CONCLUSION]{.underline}
+
+### key points
+
+* From the data taken,we can assume there are no seasonal changes in the behavior of riders.
+* Both members and casual riders prefer docked bikes then electric bikes.
+* Casual riders rent considerably higher number of rides on weekends, more than even members compared to weekdays.
+* Average ride time of casual riders is always much higher,than members on all days of a week.
+* Count of riders who return the bike next day is higher than members on all days including weekdays.
+
+## Suggestions
+
+1. Since casual riders rent more bikes on weekends, weekend changers can be increased for non members.
+2. Average ride time of casual riders is always higher, so restriction of time can be placed for non members and charges can be increased for riders who borrow the bikes over time.
+3. More Casual riders have a tendency to return the bike next day.So , perk time or points can be given to members who rent bikes for a longer time length or return the bike next day. It will create an opportunity for non members to buy membership.
+
+## For future improvements
+
+ Data can be collected about the neighborhood of each bike rental station and the behavior of riders from different neighborhood can be analyzed.
